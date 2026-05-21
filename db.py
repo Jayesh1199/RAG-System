@@ -6,23 +6,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Single DATABASE_URL from environment — works on both local and Render
-DB_URL = os.environ.get("DATABASE_URL")
+DB_URL = os.environ.get("DATABASE_URL", "")
 
 if not DB_URL:
-    raise ValueError("DATABASE_URL environment variable is not set!")
+    raise ValueError("DATABASE_URL is not set!")
 
-# Neon requires sslmode=require for all connections
+# Neon requires SSL
 if "sslmode" not in DB_URL:
     DB_URL += "?sslmode=require"
 
-engine = create_engine(DB_URL)
+engine = create_engine(DB_URL, pool_pre_ping=True)
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
@@ -40,8 +35,12 @@ class FileChunk(Base):
     chunk_embedding = Column(Vector(1536))
 
 def init_db():
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
-    Base.metadata.create_all(bind=engine)
-    print("Database initialized successfully!")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database initialized successfully!")
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
+        raise
