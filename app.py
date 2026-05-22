@@ -39,29 +39,19 @@ uploaded_file = st.file_uploader(
 
 # When user clicks Upload button
 if uploaded_file is not None:
-    if st.button("Upload Document", type="primary"):
-        
-        # Show loading spinner while uploading
-        with st.spinner("Uploading and processing..."):
-            
-            # Send file to FastAPI
-            # requests.post = sends POST request
-            # files = the file we're sending
-            files = {
-                "file": (
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
-                    "multipart/form-data"
-                )
-            }
+  if st.button("🤖 Ask AI", type="primary"):
+    if not question or question.strip() == "":
+        st.warning("Please enter a question!")
+    else:
+        with st.spinner("AI is thinking..."):
             response = requests.post(
-            f"{API_URL}/ask/",
-            json={
-                "question": question,
-                "file_id": int(file_id)
+                f"{API_URL}/ask/",
+                json={
+                    "question": question,
+                    "file_id": int(file_id)
                 },
-             timeout=120
-)
+                timeout=120
+            )
             
             # Check if upload worked
             if response.status_code == 200:
