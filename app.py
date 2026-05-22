@@ -2,8 +2,12 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# API URL from Streamlit secrets
+# API config from Streamlit secrets
 API_URL = st.secrets.get("API_URL", "https://rag-system-hnez.onrender.com")
+API_KEY = st.secrets.get("API_KEY", "rag-system-jayesh-2026")
+
+# Auth header sent with every request
+HEADERS = {"X-API-Key": API_KEY}
 
 # Page configuration
 st.set_page_config(
@@ -41,20 +45,22 @@ if uploaded_file is not None:
                 response = requests.post(
                     f"{API_URL}/uploadfile/",
                     files=files,
+                    headers=HEADERS,
                     timeout=120
                 )
-                if response.status_code == 200:
+                if response.status_code == 201:
                     data = response.json()
-                    if "error" in data:
-                        st.error(f"Error: {data['error']}")
-                    else:
-                        st.success(
-                            f"✅ File uploaded! "
-                            f"ID: {data['file_id']} — "
-                            f"Processing in background..."
-                        )
+                    st.success(
+                        f"✅ File uploaded! "
+                        f"ID: {data['file_id']} — "
+                        f"Processing in background..."
+                    )
+                elif response.status_code == 409:
+                    st.warning("This file already exists in the database!")
+                elif response.status_code == 403:
+                    st.error("Authentication failed — check your API key.")
                 else:
-                    st.error("Upload failed!")
+                    st.error(f"Upload failed! Status: {response.status_code}")
             except requests.exceptions.Timeout:
                 st.error("Request timed out. Render may be waking up — try again in 30 seconds.")
             except Exception as e:
@@ -68,7 +74,11 @@ st.divider()
 st.header("📄 Your Documents")
 
 try:
-    response = requests.get(f"{API_URL}/", timeout=30)
+    response = requests.get(
+        f"{API_URL}/",
+        headers=HEADERS,
+        timeout=30
+    )
     if response.status_code == 200:
         data = response.json()
         files = data.get("files", [])
@@ -117,6 +127,7 @@ if st.button("🤖 Ask AI", type="primary", key="ask_btn"):
                         "question": question,
                         "file_id": int(file_id)
                     },
+                    headers=HEADERS,
                     timeout=120
                 )
                 if response.status_code == 200:
@@ -126,8 +137,12 @@ if st.button("🤖 Ask AI", type="primary", key="ask_btn"):
                     if data.get("context_used"):
                         with st.expander("📌 See context used by AI"):
                             st.text(data["context_used"])
+                elif response.status_code == 403:
+                    st.error("Authentication failed — check your API key.")
+                elif response.status_code == 404:
+                    st.error(f"File ID {file_id} not found. Please upload a document first.")
                 else:
-                    st.error("Could not get answer!")
+                    st.error(f"Could not get answer! Status: {response.status_code}")
             except requests.exceptions.Timeout:
                 st.error("Request timed out. Try again in 30 seconds.")
             except Exception as e:
