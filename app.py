@@ -1,9 +1,10 @@
 import streamlit as st
 import requests
 import time
-
+import os
 # Our FastAPI URL
-API_URL = "http://136.113.148.68:8000"
+
+API_URL = st.secrets.get("API_URL", "https://rag-system-hnez.onrender.com")
 
 # Page configuration
 # Sets title, icon and layout of the page
@@ -54,11 +55,13 @@ if uploaded_file is not None:
                 )
             }
             response = requests.post(
-            f"{API_URL}/uploadfile/",
-            files=files,
-            timeout=120
-
-            )
+            f"{API_URL}/ask/",
+            json={
+                "question": question,
+                "file_id": int(file_id)
+                },
+             timeout=120
+)
             
             # Check if upload worked
             if response.status_code == 200:
