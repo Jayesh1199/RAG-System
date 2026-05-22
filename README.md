@@ -41,13 +41,13 @@ A production-ready **Retrieval-Augmented Generation (RAG)** system that allows y
 ## 📸 Screenshots
 
 ### Document Upload
-![Upload](screenshots/upload.png)
+![Upload](Upload.png)
 
 ### AI Answer
-![Answer](screenshots/answer.png)
+![Answer](answer.png)
 
 ### Database (Neon pgvector)
-![Database](screenshots/database.png)
+![Database](Database.png)
 
 ---
 
