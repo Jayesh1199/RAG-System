@@ -57,7 +57,7 @@ if uploaded_file is not None:
             f"{API_URL}/uploadfile/",
             files=files,
             timeout=120
-)
+
             )
             
             # Check if upload worked
