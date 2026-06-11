@@ -1,6 +1,3 @@
 streamlit
 requests
 pandas
-openai==1.51.0
-httpx==0.27.2
-httpcore==1.0.9
