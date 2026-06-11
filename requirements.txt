@@ -1,4 +1,11 @@
-streamlit
-requests
-pandas
+fastapi==0.115.0
+uvicorn==0.30.6
 openai==1.57.0
+python-multipart==0.0.12
+pgvector==0.3.2
+psycopg2-binary==2.9.9
+pypdf2==3.0.1
+python-dotenv==1.0.1
+pydantic==1.10.21
+sqlalchemy==2.0.36
+nltk==3.9.1
