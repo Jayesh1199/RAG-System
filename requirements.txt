@@ -1,3 +1,4 @@
 streamlit
 requests
 pandas
+openai==1.57.0
