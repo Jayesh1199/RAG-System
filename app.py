@@ -113,7 +113,7 @@ def fetch_document_list() -> list[dict]:
 documents = fetch_document_list()
 
 if documents:
-    df = pd.DataFrame(documents, columns=["File ID", "Filename"])
+    df = pd.DataFrame(documents).rename(columns={"id": "File ID", "filename": "Filename"})
     st.dataframe(df, use_container_width=True, hide_index=True)
 else:
     st.info("No documents uploaded yet.")
