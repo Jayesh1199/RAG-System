@@ -1,3 +1,4 @@
 streamlit
 requests
 pandas
+starlette==0.41.3
