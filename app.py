@@ -2,14 +2,20 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# API config from Streamlit secrets
-API_URL = st.secrets.get("API_URL", "https://rag-system-hnez.onrender.com")
-API_KEY = st.secrets.get("API_KEY", "rag-system-jayesh-2026")
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+API_URL = st.secrets["API_URL"]   # No fallback — fail loudly if misconfigured
+API_KEY = st.secrets["API_KEY"]   # Never hardcode secrets, even as defaults
 
-# Auth header sent with every request
-HEADERS = {"X-API-Key": API_KEY}
+AUTH_HEADERS = {"X-API-Key": API_KEY}
 
-# Page configuration
+REQUEST_TIMEOUT_SHORT = 30   # seconds — for lightweight GET requests
+REQUEST_TIMEOUT_LONG  = 120  # seconds — for upload/inference (Render cold starts)
+
+# ---------------------------------------------------------------------------
+# Page setup
+# ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="RAG Document Assistant",
     page_icon="🤖",
@@ -17,12 +23,13 @@ st.set_page_config(
 )
 
 st.title("🤖 RAG Document Assistant")
-st.markdown("*Upload documents and ask AI questions about them!*")
+st.markdown("*Upload documents and ask AI questions about them.*")
 st.divider()
 
-# ─────────────────────────────────────
-# SECTION 1 - UPLOAD DOCUMENT
-# ─────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Section 1 — Upload Document
+# ---------------------------------------------------------------------------
 st.header("📁 Upload Document")
 
 uploaded_file = st.file_uploader(
@@ -34,68 +41,89 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     if st.button("Upload Document", type="primary", key="upload_btn"):
         with st.spinner("Uploading and processing..."):
+
+            # Infer MIME type from extension rather than hardcoding a transport encoding
+            mime_type = (
+                "application/pdf"
+                if uploaded_file.name.lower().endswith(".pdf")
+                else "text/plain"
+            )
+
             files = {
-                "file": (
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
-                    "multipart/form-data"
-                )
+                "file": (uploaded_file.name, uploaded_file.getvalue(), mime_type)
             }
+
             try:
                 response = requests.post(
                     f"{API_URL}/uploadfile/",
                     files=files,
-                    headers=HEADERS,
-                    timeout=120
+                    headers=AUTH_HEADERS,
+                    timeout=REQUEST_TIMEOUT_LONG
                 )
+
                 if response.status_code == 201:
-                    data = response.json()
-                    st.success(
-                        f"✅ File uploaded! "
-                        f"ID: {data['file_id']} — "
-                        f"Processing in background..."
-                    )
+                    file_id = response.json().get("file_id")
+                    st.success(f"✅ Uploaded successfully — File ID: {file_id}")
+
+                    # Invalidate the cached document list so it refreshes below
+                    st.cache_data.clear()
+
                 elif response.status_code == 409:
-                    st.warning("This file already exists in the database!")
+                    st.warning("⚠️ This file already exists in the database.")
                 elif response.status_code == 403:
-                    st.error("Authentication failed — check your API key.")
+                    st.error("🔒 Authentication failed — check your API key in secrets.")
                 else:
-                    st.error(f"Upload failed! Status: {response.status_code}")
+                    st.error(f"Upload failed. Status {response.status_code}: {response.text}")
+
             except requests.exceptions.Timeout:
-                st.error("Request timed out. Render may be waking up — try again in 30 seconds.")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error("⏱ Request timed out. Render may be waking up — wait 30s and retry.")
+            except requests.exceptions.ConnectionError:
+                st.error("🔌 Could not reach the backend. Check that the API_URL is correct.")
 
 st.divider()
 
-# ─────────────────────────────────────
-# SECTION 2 - YOUR DOCUMENTS
-# ─────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Section 2 — Document List
+# Cached for 60 seconds to avoid hammering the backend on every Streamlit rerun
+# ---------------------------------------------------------------------------
 st.header("📄 Your Documents")
 
-try:
-    response = requests.get(
-        f"{API_URL}/",
-        headers=HEADERS,
-        timeout=30
-    )
-    if response.status_code == 200:
-        data = response.json()
-        files = data.get("files", [])
-        if files:
-            df = pd.DataFrame(files)
-            df.columns = ["File ID", "Filename"]
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No documents uploaded yet!")
-except:
-    st.warning("Could not fetch documents. API may be waking up.")
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_document_list() -> list[dict]:
+    """
+    Fetches the list of uploaded documents from the backend.
+    Returns an empty list on failure so the UI degrades gracefully.
+    """
+    try:
+        response = requests.get(
+            f"{API_URL}/",
+            headers=AUTH_HEADERS,
+            timeout=REQUEST_TIMEOUT_SHORT
+        )
+        response.raise_for_status()
+        return response.json().get("files", [])
+
+    except requests.exceptions.RequestException as exc:
+        # Surface the actual error instead of hiding it
+        st.warning(f"Could not fetch documents: {exc}")
+        return []
+
+
+documents = fetch_document_list()
+
+if documents:
+    df = pd.DataFrame(documents, columns=["File ID", "Filename"])
+    st.dataframe(df, use_container_width=True, hide_index=True)
+else:
+    st.info("No documents uploaded yet.")
 
 st.divider()
 
-# ─────────────────────────────────────
-# SECTION 3 - ASK A QUESTION
-# ─────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Section 3 — Ask a Question
+# ---------------------------------------------------------------------------
 st.header("💬 Ask a Question")
 
 col1, col2 = st.columns([1, 3])
@@ -105,48 +133,56 @@ with col1:
         "File ID",
         min_value=1,
         value=1,
-        help="Enter the ID of the document"
+        step=1,
+        help="Enter the ID shown in the document list above"
     )
 
 with col2:
     question = st.text_input(
         "Your Question",
-        placeholder="e.g. What are Jayesh's skills?",
-        help="Ask anything about your document!"
+        placeholder="e.g. What are the key findings in this document?",
+        help="Ask anything about the selected document."
     )
 
 if st.button("🤖 Ask AI", type="primary", key="ask_btn"):
-    if not question or question.strip() == "":
-        st.warning("Please enter a question!")
+
+    cleaned_question = question.strip()
+
+    if not cleaned_question:
+        st.warning("Please enter a question before submitting.")
     else:
-        with st.spinner("AI is thinking..."):
+        with st.spinner("Querying AI..."):
             try:
                 response = requests.post(
                     f"{API_URL}/ask/",
-                    json={
-                        "question": question,
-                        "file_id": int(file_id)
-                    },
-                    headers=HEADERS,
-                    timeout=120
+                    json={"question": cleaned_question, "file_id": int(file_id)},
+                    headers=AUTH_HEADERS,
+                    timeout=REQUEST_TIMEOUT_LONG
                 )
+
                 if response.status_code == 200:
-                    data = response.json()
+                    payload = response.json()
                     st.success("✅ Answer:")
-                    st.markdown(f"**{data['answer']}**")
-                    if data.get("context_used"):
-                        with st.expander("📌 See context used by AI"):
-                            st.text(data["context_used"])
+                    st.markdown(f"**{payload['answer']}**")
+
+                    context = payload.get("context_used")
+                    if context:
+                        with st.expander("📌 Retrieved context used by AI"):
+                            st.text(context)
+
                 elif response.status_code == 403:
-                    st.error("Authentication failed — check your API key.")
+                    st.error("🔒 Authentication failed — check your API key.")
                 elif response.status_code == 404:
-                    st.error(f"File ID {file_id} not found. Please upload a document first.")
+                    st.error(f"File ID {file_id} not found. Upload the document first.")
                 else:
-                    st.error(f"Could not get answer! Status: {response.status_code}")
+                    st.error(
+                        f"Request failed. Status {response.status_code}: {response.text}"
+                    )
+
             except requests.exceptions.Timeout:
-                st.error("Request timed out. Try again in 30 seconds.")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error("⏱ Request timed out. Try again in 30 seconds.")
+            except requests.exceptions.ConnectionError:
+                st.error("🔌 Backend unreachable. Verify your API_URL in secrets.")
 
 st.divider()
-st.markdown("Built with ❤️ using FastAPI + OpenAI + PostgreSQL")
+st.markdown("Built with FastAPI · OpenAI · PostgreSQL · pgvector")
