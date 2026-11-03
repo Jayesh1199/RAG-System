@@ -1,180 +1,148 @@
-import streamlit as st
 import requests
-import pandas as pd
+import streamlit as st
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-API_URL = st.secrets["API_URL"]
-API_KEY = st.secrets["API_KEY"]
 
-AUTH_HEADERS = {"X-API-Key": API_KEY}
+st.set_page_config(page_title="RAG Document Assistant", page_icon="📄", layout="wide")
 
-REQUEST_TIMEOUT_SHORT = 30
-REQUEST_TIMEOUT_LONG  = 120
+API_URL = st.secrets["API_URL"].rstrip("/")
+AUTH_HEADERS = {"X-API-Key": st.secrets["API_KEY"]}
+REQUEST_TIMEOUT = 120
 
-# ---------------------------------------------------------------------------
-# Page setup
-# ---------------------------------------------------------------------------
-st.set_page_config(
-    page_title="RAG Document Assistant",
-    page_icon="🤖",
-    layout="wide"
-)
 
-st.title("🤖 RAG Document Assistant")
-st.markdown("*Upload documents and ask AI questions about them.*")
+def reset_document():
+    # A new selection must never keep using the previous document's ID or answer.
+    st.session_state["active_file_id"] = None
+    st.session_state["answer_payload"] = None
+    st.session_state["answered_question"] = ""
+    st.session_state["question"] = ""
+
+
+for key, value in {
+    "active_file_id": None,
+    "answer_payload": None,
+    "answered_question": "",
+    "question": "",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+st.title("📄 RAG Document Assistant")
+st.markdown("Upload a PDF or text file, then ask questions about its contents.")
 st.divider()
 
-
-# ---------------------------------------------------------------------------
-# Section 1 — Upload Document
-# ---------------------------------------------------------------------------
-st.header("📁 Upload Document")
-
+st.header("1. Upload a document")
 uploaded_file = st.file_uploader(
-    "Choose a file",
-    type=["txt", "pdf"],
-    help="Supports TXT and PDF files only"
+    "Choose a PDF or text file",
+    type=["pdf", "txt"],
+    key="document_upload",
+    on_change=reset_document,
 )
 
 if uploaded_file is not None:
-    if st.button("Upload Document", type="primary", key="upload_btn"):
-        with st.spinner("Uploading and processing..."):
-
+    if st.button(
+        "Upload Document",
+        type="primary",
+        disabled=st.session_state["active_file_id"] is not None,
+    ):
+        with st.spinner("Uploading your document..."):
             mime_type = (
                 "application/pdf"
                 if uploaded_file.name.lower().endswith(".pdf")
                 else "text/plain"
             )
-
-            files = {
-                "file": (uploaded_file.name, uploaded_file.getvalue(), mime_type)
-            }
-
             try:
                 response = requests.post(
                     f"{API_URL}/uploadfile/",
-                    files=files,
+                    files={"file": (uploaded_file.name, uploaded_file.getvalue(), mime_type)},
                     headers=AUTH_HEADERS,
-                    timeout=REQUEST_TIMEOUT_LONG
+                    timeout=REQUEST_TIMEOUT,
                 )
-
                 if response.status_code == 201:
                     file_id = response.json().get("file_id")
-                    st.success(f"✅ Uploaded successfully — File ID: {file_id}")
-                    st.cache_data.clear()
-
+                    if type(file_id) is not int or file_id < 1:
+                        raise ValueError("Invalid upload response")
+                    st.session_state["active_file_id"] = file_id
                 elif response.status_code == 409:
-                    st.warning("⚠️ This file already exists in the database.")
+                    st.warning(
+                        "This filename is already in use. Rename your file, "
+                        "select it again, and upload it."
+                    )
                 elif response.status_code == 403:
-                    st.error("🔒 Authentication failed — check your API key in secrets.")
+                    st.error("The app could not authorize the upload. Please contact the app owner.")
                 else:
-                    st.error(f"Upload failed. Status {response.status_code}: {response.text}")
-
+                    st.error(f"Upload failed (status {response.status_code}). Please try again.")
             except requests.exceptions.Timeout:
-                st.error("⏱ Request timed out. Render may be waking up — wait 30s and retry.")
-            except requests.exceptions.ConnectionError:
-                st.error("🔌 Could not reach the backend. Check that the API_URL is correct.")
+                st.error("The upload timed out. The server may still have saved it. Please try again later.")
+            except requests.exceptions.RequestException:
+                st.error("Could not reach the server. Please try again shortly.")
+            except ValueError:
+                st.error("The server returned an unexpected response. Please contact the app owner.")
+
+if st.session_state["active_file_id"] is not None:
+    st.success("Document uploaded. Processing may take a moment before answers are available.")
 
 st.divider()
+st.header("2. Ask a question")
+has_document = st.session_state["active_file_id"] is not None
 
+if not has_document:
+    st.info("Upload a document to start asking questions.")
 
-# ---------------------------------------------------------------------------
-# Section 2 — Document List
-# ---------------------------------------------------------------------------
-st.header("📄 Your Documents")
+question = st.text_input(
+    "Your question",
+    key="question",
+    placeholder="For example: What are the key points in this document?",
+    disabled=not has_document,
+)
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_document_list() -> list[dict]:
-    try:
-        response = requests.get(
-            f"{API_URL}/",
-            headers=AUTH_HEADERS,
-            timeout=REQUEST_TIMEOUT_SHORT
-        )
-        response.raise_for_status()
-        return response.json().get("files", [])
-
-    except requests.exceptions.RequestException as exc:
-        st.warning(f"Could not fetch documents: {exc}")
-        return []
-
-
-documents = fetch_document_list()
-
-if documents:
-    df = pd.DataFrame(documents).rename(columns={"id": "File ID", "filename": "Filename"})
-    st.dataframe(df, use_container_width=True, hide_index=True)
-else:
-    st.info("No documents uploaded yet.")
-
-st.divider()
-
-
-# ---------------------------------------------------------------------------
-# Section 3 — Ask a Question
-# ---------------------------------------------------------------------------
-st.header("💬 Ask a Question")
-st.caption("💡 Try: 'What are Jayesh's technical skills?' using File ID 10")
-
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    file_id = st.number_input(
-        "File ID",
-        min_value=1,
-        value=10,
-        step=1,
-        help="Enter the ID shown in the document list above"
-    )
-
-with col2:
-    question = st.text_input(
-        "Your Question",
-        value="What are Jayesh's technical skills?",
-        help="Ask anything about the selected document."
-    )
-
-if st.button("🤖 Ask AI", type="primary", key="ask_btn"):
-
+if st.button("Ask AI", type="primary", disabled=not has_document):
+    st.session_state["answer_payload"] = None
     cleaned_question = question.strip()
-
     if not cleaned_question:
-        st.warning("Please enter a question before submitting.")
+        st.warning("Please enter a question.")
     else:
-        with st.spinner("Querying AI..."):
+        with st.spinner("Finding an answer in your document..."):
             try:
                 response = requests.post(
                     f"{API_URL}/ask/",
-                    json={"question": cleaned_question, "file_id": int(file_id)},
+                    json={
+                        "question": cleaned_question,
+                        "file_id": st.session_state["active_file_id"],
+                    },
                     headers=AUTH_HEADERS,
-                    timeout=REQUEST_TIMEOUT_LONG
+                    timeout=REQUEST_TIMEOUT,
                 )
-
                 if response.status_code == 200:
                     payload = response.json()
-                    st.success("✅ Answer:")
-                    st.markdown(f"**{payload['answer']}**")
-
-                    context = payload.get("context_used")
-                    if context:
-                        with st.expander("📌 Retrieved context used by AI"):
-                            st.text(context)
-
+                    if not isinstance(payload, dict) or not isinstance(payload.get("answer"), str):
+                        raise ValueError("Invalid answer response")
+                    st.session_state["answer_payload"] = payload
+                    st.session_state["answered_question"] = cleaned_question
                 elif response.status_code == 403:
-                    st.error("🔒 Authentication failed — check your API key.")
+                    st.error("The app could not authorize the question. Please contact the app owner.")
                 elif response.status_code == 404:
-                    st.error(f"File ID {file_id} not found. Upload the document first.")
+                    st.error("This document is no longer available. Select and upload a document again.")
+                    st.session_state["active_file_id"] = None
                 else:
                     st.error(
-                        f"Request failed. Status {response.status_code}: {response.text}"
+                        f"The server could not answer your question (status {response.status_code}). "
+                        "Please try again shortly. If this continues, contact the app owner."
                     )
-
             except requests.exceptions.Timeout:
-                st.error("⏱ Request timed out. Try again in 30 seconds.")
-            except requests.exceptions.ConnectionError:
-                st.error("🔌 Backend unreachable. Verify your API_URL in secrets.")
+                st.error("The answer took too long. Please try again shortly.")
+            except requests.exceptions.RequestException:
+                st.error("Could not reach the server. Please try again shortly.")
+            except ValueError:
+                st.error("The server returned an unexpected response. Please contact the app owner.")
+
+payload = st.session_state["answer_payload"]
+if payload is not None:
+    st.subheader("Answer")
+    st.caption("Question: " + st.session_state["answered_question"])
+    st.markdown(payload["answer"])
+    if payload.get("context_used"):
+        with st.expander("View supporting text"):
+            st.text(payload["context_used"])
 
 st.divider()
-st.markdown("Built with FastAPI · OpenAI · PostgreSQL · pgvector")
+st.caption("Built with FastAPI · OpenAI · PostgreSQL · pgvector")
