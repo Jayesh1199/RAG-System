@@ -103,7 +103,25 @@ def root():
         "files": []
     }
     
+@app.get("/sample-document/")
+def get_sample_document(
+    db: Session = Depends(get_db),
+    api_key: str = Security(verify_api_key)
+):
+    sample = db.query(File).filter(
+        File.file_name == "rag_project_overview.pdf"
+    ).first()
 
+    if sample is None:
+        raise HTTPException(
+            status_code=404,
+            detail="The sample document is unavailable."
+        )
+
+    return {
+        "file_id": sample.id,
+        "filename": sample.file_name
+    }
 # ---------------------------------------------------------------------------
 # Upload — store file content in DB, not on disk
 # ---------------------------------------------------------------------------
