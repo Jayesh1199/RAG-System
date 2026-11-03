@@ -57,8 +57,8 @@ if st.button("Try sample document", key="try_sample"):
             reset_document()
             st.session_state["active_file_id"] = sample_id
             st.session_state["question"] = (
-                "What problem does this application solve, "
-                "and which technologies does it use?"
+                "Give me a brief overview of this project "
+                "and its key engineering decisions."
             )
             st.session_state["upload_widget_version"] = (
                 st.session_state.get("upload_widget_version", 0) + 1
