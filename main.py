@@ -97,12 +97,12 @@ def health(db: Session = Depends(get_db)):
 # Root — list all files
 # ---------------------------------------------------------------------------
 @app.get("/")
-def root(db: Session = Depends(get_db)):
-    files = db.query(File).all()
+def root():
     return {
         "message": "RAG System is live!",
-        "files": [{"id": f.id, "filename": f.file_name} for f in files]
+        "files": []
     }
+    
 
 # ---------------------------------------------------------------------------
 # Upload — store file content in DB, not on disk
