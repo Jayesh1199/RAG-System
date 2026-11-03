@@ -30,11 +30,53 @@ st.title("📄 RAG Document Assistant")
 st.markdown("Upload a PDF or text file, then ask questions about its contents.")
 st.divider()
 
+st.subheader("Explore the demo")
+st.write(
+    "Try the project overview without uploading a file, "
+    "or upload your own document below."
+)
+
+if st.button("Try sample document", key="try_sample"):
+    with st.spinner("Loading the sample document..."):
+        try:
+            response = requests.get(
+                f"{API_URL}/sample-document/",
+                headers=AUTH_HEADERS,
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid sample response")
+
+            sample_id = payload.get("file_id")
+            if type(sample_id) is not int or sample_id < 1:
+                raise ValueError("Invalid sample document ID")
+
+            reset_document()
+            st.session_state["active_file_id"] = sample_id
+            st.session_state["question"] = (
+                "What problem does this application solve, "
+                "and which technologies does it use?"
+            )
+            st.session_state["upload_widget_version"] = (
+                st.session_state.get("upload_widget_version", 0) + 1
+            )
+
+        except (requests.exceptions.RequestException, ValueError):
+            st.error(
+                "The sample could not be loaded. "
+                "Please try again shortly or upload your own document."
+            )
+
+st.divider()
+
 st.header("1. Upload a document")
 uploaded_file = st.file_uploader(
     "Choose a PDF or text file",
     type=["pdf", "txt"],
-    key="document_upload",
+    key=f"document_upload_{st.session_state.get('upload_widget_version', 0)}",
     on_change=reset_document,
 )
 
@@ -79,7 +121,8 @@ if uploaded_file is not None:
                 st.error("The server returned an unexpected response. Please contact the app owner.")
 
 if st.session_state["active_file_id"] is not None:
-    st.success("Document uploaded. Processing may take a moment before answers are available.")
+    st.success("Document selected. Ask a question below. "
+        "New uploads may take a moment to finish processing.")
 
 st.divider()
 st.header("2. Ask a question")
