@@ -102,7 +102,7 @@ def root():
         "message": "RAG System is live!",
         "files": []
     }
-    }
+    
 
 # ---------------------------------------------------------------------------
 # Upload — store file content in DB, not on disk
