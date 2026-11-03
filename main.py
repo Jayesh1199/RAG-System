@@ -230,7 +230,7 @@ async def ask_question(
 
     # Ask GPT with grounded context
     ai_response = openai.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-6-luna",
         messages=[
             {
                 "role": "system",
@@ -242,7 +242,10 @@ async def ask_question(
             }
         ],
         temperature=0.2,
-        max_tokens=500
+        extra_body={
+            "reasoning_effort": "none",
+            "max_completion_tokens": 500
+}
     )
 
     return {
